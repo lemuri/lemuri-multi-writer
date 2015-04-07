@@ -11,8 +11,10 @@
 class ReaderThread : public QThread
 {
 public:
-    ReaderThread(QFile *file_image, int buffer_size)
-        : freeBytes(chunkCount)
+    ReaderThread(QFile *file_image, int buffer_size, bool *cancel)
+        : freeChunks(chunkCount)
+        , imageHash(QCryptographicHash::Sha256)
+        , m_cancel(cancel)
     {
         bufferSize = buffer_size * chunkCount;
         chunkSize = buffer_size;
@@ -35,14 +37,16 @@ public:
 
     void run() Q_DECL_OVERRIDE
     {
-        QCryptographicHash imageHash(QCryptographicHash::Sha256);
-
         for (qint64 i = 0; i < chunks; ++i) {
-            freeBytes.acquire();
+            if (*m_cancel) {
+                return;
+            }
+
+            freeChunks.acquire();
             char *ptr = buffer + ((i % chunkCount) * chunkSize);
             int ret = image->read(ptr, chunkSize);
             imageHash.addData(buffer + ((i % chunkCount) * chunkSize), ret);
-            usedBytes.release();
+            usedChunks.release();
         }
     }
 
@@ -50,13 +54,17 @@ public:
     int bufferSize;
     int chunkSize;
     int chunks;
-    const int chunkCount = 10;
+    const int chunkCount = 100;
     qint64 imageSize;
+    QCryptographicHash imageHash;
 
     QFile *image;
 
-    QSemaphore freeBytes;
-    QSemaphore usedBytes;
+    QSemaphore freeChunks;
+    QSemaphore usedChunks;
+
+private:
+    bool *m_cancel;
 };
 
 WriterThread::WriterThread(QObject *parent) : QThread(parent)
@@ -94,8 +102,6 @@ void WriterThread::run()
         return;
     }
 
-    QCryptographicHash imageHash(QCryptographicHash::Sha256);
-
     bool openFailed = false;
     QList<QFile *> destinations;
     Q_FOREACH (const QString &path, m_destinations) {
@@ -114,7 +120,7 @@ void WriterThread::run()
         return;
     }
 
-    ReaderThread *reader = new ReaderThread(&image, m_bufferSize);
+    ReaderThread *reader = new ReaderThread(&image, m_bufferSize, &m_cancel);
 
     QTime time;
     time.start();
@@ -126,13 +132,17 @@ void WriterThread::run()
     int currentProgress = 0;
 
     for (qint64 i = 0; i < reader->chunks; ++i) {
-        reader->usedBytes.acquire();
+        if (m_cancel) {
+            qDebug() << "canceling...";
+            break;
+        }
+
+        reader->usedChunks.acquire();
 
         // Do not pass the end of the buffer
         int readSize = reader->chunkSize;
         if (writePos + readSize > imageSize) {
             readSize = imageSize - writePos;
-            qDebug() << "read size" << readSize;
         }
 
         // Write chunk
@@ -160,10 +170,10 @@ void WriterThread::run()
         if (newProgress != currentProgress) {
             currentProgress = newProgress;
             Q_EMIT updateProgress(currentProgress);
-            qDebug() << "progress" << newProgress;
+            qDebug() << "progress" << newProgress << reader->usedChunks.available() << reader->freeChunks.available();
         }
 
-        reader->freeBytes.release();
+        reader->freeChunks.release();
     }
 
     // sync
@@ -181,11 +191,21 @@ void WriterThread::run()
         ++i;
     }
 
+
+    if (destinations.isEmpty()) {
+        cancel();
+    }
+
+    QByteArray hashResult = reader->imageHash.result();
+
+    reader->wait();
+    delete reader;
+
     qDeleteAll(destinations);
 
     sync();
 
     Q_EMIT finishedJob(time.elapsed());
 
-    qDebug() << "finished" << imageHash.result().toHex();
+    qDebug() << "finished" << hashResult.toHex();
 }

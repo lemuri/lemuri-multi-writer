@@ -11,10 +11,10 @@ find_package(Qt5 COMPONENTS
     Widgets
 )
 
+find_package(UDisks2Qt5 REQUIRED)
+
 # Enable C++11 features
 add_definitions(-std=c++11)
-
-pkg_check_modules(UDEV REQUIRED libudev)
 
 # Find includes in corresponding build directories
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -33,7 +33,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_BINARY_DIR}
-    ${UDEV_INCLUDE_DIR}
+    ${UDisks2Qt5_INCLUDE_DIR}
 )
 
 add_subdirectory(src)

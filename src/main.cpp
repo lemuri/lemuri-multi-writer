@@ -1,6 +1,13 @@
-#include <QApplication>
+#include <QGuiApplication>
+#include <QTranslator>
+#include <QLibraryInfo>
+
+#include <QQmlApplicationEngine>
+#include <QtQml/QQmlComponent>
 
 #include "multiwriter.h"
+
+#include "devicesmodel.h"
 
 int main(int argc, char *argv[])
 {
@@ -10,14 +17,16 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationName("lemuri-multi-writer");
     QCoreApplication::setApplicationVersion("1.0");
 
-    // TODO use libudisks-qt
-    QCoreApplication::setSetuidAllowed(true);
+    QGuiApplication app(argc, argv);
 
-    QApplication app(argc, argv);
+    QTranslator qtTranslator;
+    qtTranslator.load("qt_" + QLocale::system().name(),
+                      QLibraryInfo::location(QLibraryInfo::TranslationsPath));
+    QCoreApplication::installTranslator(&qtTranslator);
 
-    MultiWriter dialog;
+    qmlRegisterType<DevicesModel>("DisksManager", 1, 0, "DevicesModel");
 
-    dialog.show();
+    QQmlApplicationEngine engine(QUrl(QLatin1String("qrc:/qml/main.qml")));
 
     return app.exec();
 }
