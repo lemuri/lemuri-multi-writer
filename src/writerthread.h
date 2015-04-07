@@ -24,7 +24,7 @@ Q_SIGNALS:
 private:
     QString m_path;
     QStringList m_destinations;
-    int m_bufferSize = 4096;
+    int m_bufferSize = 8192;
     bool m_cancel = false;
 };
 
